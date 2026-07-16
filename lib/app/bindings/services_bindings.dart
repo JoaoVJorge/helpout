@@ -2,6 +2,7 @@ import "package:dio/dio.dart";
 import "package:flutter_secure_storage/flutter_secure_storage.dart";
 import "package:get/get.dart";
 import "package:help_out/core/services/daily_progress/daily_progress_service.dart";
+import "package:help_out/core/services/http/auth_interceptor.dart";
 import "package:help_out/core/services/http/http_client_service.dart";
 import "package:help_out/core/services/last_activity/last_activity_service.dart";
 import "package:help_out/core/services/live_activity/timer_live_activity_service.dart";
@@ -52,6 +53,7 @@ class ServicesBindings extends Bindings {
     Get.put<DailyProgressService>(dailyProgressService, permanent: true);
 
     final Dio dio = Dio(BaseOptions(baseUrl: EnvironmentKeys.baseUrl));
+    dio.interceptors.add(AuthInterceptor(dio: dio, localStorageService: Get.find()));
     Get.put<Dio>(dio, permanent: true);
     Get.put<HttpClientService>(
       HttpClientService(dio: Get.find()),

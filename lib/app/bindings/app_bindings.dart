@@ -6,6 +6,7 @@ import "package:help_out/app/app_navigator.dart";
 import "package:help_out/app/bindings/data_sources_bindings.dart";
 import "package:help_out/app/bindings/repositories_bindings.dart";
 import "package:help_out/app/bindings/services_bindings.dart";
+import "package:help_out/app/bindings/sync_bindings.dart";
 import "package:help_out/app/bindings/use_cases_bindings.dart";
 import "package:help_out/presentation/schedule/schedule_controller.dart";
 
@@ -22,6 +23,7 @@ class AppBindings extends Bindings {
     DataSourcesBindings().dependencies();
     RepositoriesBindings().dependencies();
     UseCasesBindings().dependencies();
+    SyncBindings().dependencies();
 
     Get.put<AppController>(
       AppController(
@@ -29,6 +31,9 @@ class AppBindings extends Bindings {
         saveAppConfigUseCase: Get.find(),
         syncProfileToBackendUseCase: Get.find(),
         appNavigator: Get.find(),
+        syncService: Get.find(),
+        fetchProfileFromBackendUseCase: Get.find(),
+        localStorageService: Get.find(),
       ),
       permanent: true,
     );

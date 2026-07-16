@@ -4,9 +4,11 @@ import "package:get/get.dart";
 import "package:help_out/app/app_controller.dart";
 import "package:help_out/app/app_navigator.dart";
 import "package:help_out/app/app_routes.dart";
+import "package:help_out/core/domain/entities/phone_verify_result.dart";
 import "package:help_out/core/domain/errors/app_error.dart";
 import "package:help_out/core/domain/use_cases/request_phone_code_use_case.dart";
 import "package:help_out/core/domain/use_cases/verify_phone_code_use_case.dart";
+import "package:help_out/core/services/http/http_status_code.dart";
 import "package:help_out/core/utils/extensions/context_extensions.dart";
 
 class OtpController extends GetxController {
@@ -44,24 +46,22 @@ class OtpController extends GetxController {
     }
 
     isSubmitting.value = true;
-    final Either<AppError, bool> result = await _verifyPhoneCodeUseCase(
-      phoneNumber: phoneNumber,
-      code: code,
-    );
+    final Either<AppError, PhoneVerifyResult> result =
+        await _verifyPhoneCodeUseCase(phoneNumber: phoneNumber, code: code);
     isSubmitting.value = false;
 
-    result.fold((error) => _appNavigator.showErrorSnackBar(), (isValid) {
-      if (!isValid) {
+    result.fold((error) {
+      if (error is HttpError && error.statusCode == HttpStatusCode.unauthorized) {
         _appNavigator.showErrorSnackBar(Get.context!.l10n.invalidCodeError);
         return;
       }
-      _onVerified();
-    });
+      _appNavigator.showErrorSnackBar();
+    }, _onVerified);
   }
 
-  void _onVerified() {
-    final bool hasAccount = _appController.userName.value.isNotEmpty;
-    if (hasAccount) {
+  void _onVerified(PhoneVerifyResult result) {
+    if (result.hasProfile) {
+      _appController.reloadProfileFromBackend();
       _appNavigator.offAllNamed(AppRoutes.mainNavigation);
     } else {
       _appNavigator.toNamed(AppRoutes.credentials, arguments: phoneNumber);

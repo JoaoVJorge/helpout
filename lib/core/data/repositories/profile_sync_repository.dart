@@ -9,4 +9,6 @@ class ProfileSyncRepository {
   final ProfileSyncDataSource _profileSyncDataSource;
 
   Future<Either<AppError, void>> syncProfile(AppConfigEntity config) => _profileSyncDataSource.syncProfile(config);
+
+  Future<Either<AppError, AppConfigEntity>> fetchProfile() => _profileSyncDataSource.fetchProfile();
 }

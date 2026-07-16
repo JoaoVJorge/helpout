@@ -14,6 +14,8 @@ class GroupsRepository {
 
   Future<Either<AppError, List<FriendOption>>> getInvitableFriends() => _groupsDataSource.getInvitableFriends();
 
+  Future<Either<AppError, void>> addFriend(String phoneNumber) => _groupsDataSource.addFriend(phoneNumber);
+
   Future<Either<AppError, GroupEntity>> createGroup({
     required String name,
     required GroupThemeType theme,

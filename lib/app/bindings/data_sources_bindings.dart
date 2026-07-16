@@ -13,9 +13,12 @@ class DataSourcesBindings extends Bindings {
     Get.put<AppConfigDataSource>(AppConfigDataSource(localStorageService: Get.find()), permanent: true);
     Get.put<SubjectsDataSource>(SubjectsDataSource(localStorageService: Get.find()), permanent: true);
     Get.put<DailyTasksDataSource>(DailyTasksDataSource(localStorageService: Get.find()), permanent: true);
-    Get.put<GroupsDataSource>(GroupsDataSource(), permanent: true);
-    Get.put<ProfileSyncDataSource>(ProfileSyncDataSource(), permanent: true);
-    Get.put<PhoneAuthDataSource>(PhoneAuthDataSource(), permanent: true);
+    Get.put<GroupsDataSource>(GroupsDataSource(httpClientService: Get.find()), permanent: true);
+    Get.put<ProfileSyncDataSource>(ProfileSyncDataSource(httpClientService: Get.find()), permanent: true);
+    Get.put<PhoneAuthDataSource>(
+      PhoneAuthDataSource(httpClientService: Get.find(), localStorageService: Get.find()),
+      permanent: true,
+    );
     Get.put<ScheduleDataSource>(ScheduleDataSource(localStorageService: Get.find()), permanent: true);
   }
 }

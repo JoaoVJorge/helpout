@@ -6,7 +6,11 @@ enum LocalStorageKeys {
   dailyProgress(hasSensitiveData: false),
   scheduleEntries(hasSensitiveData: false),
   accessToken(hasSensitiveData: true),
-  refreshToken(hasSensitiveData: true);
+  refreshToken(hasSensitiveData: true),
+  lastSyncedAt(hasSensitiveData: false),
+  lastPushedSubjectIds(hasSensitiveData: false),
+  lastPushedDailyTaskIds(hasSensitiveData: false),
+  lastPushedScheduleEntryIds(hasSensitiveData: false);
 
   const LocalStorageKeys({required this.hasSensitiveData});
 

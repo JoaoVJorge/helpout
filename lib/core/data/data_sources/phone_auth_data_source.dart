@@ -1,21 +1,41 @@
 import "package:dartz/dartz.dart";
+import "package:help_out/core/data/http_requests/auth_http_requests.dart";
+import "package:help_out/core/domain/entities/phone_verify_result.dart";
 import "package:help_out/core/domain/errors/app_error.dart";
+import "package:help_out/core/services/http/http_client_service.dart";
+import "package:help_out/core/services/local_storage/app_local_storage_service.dart";
+import "package:help_out/core/services/local_storage/local_storage_keys.dart";
 
-/// Mock phone authentication backend. There is no real SMS provider yet, so
-/// requesting a code just simulates a network round-trip and verifying accepts
-/// any well-formed 6-digit code.
 class PhoneAuthDataSource {
+  PhoneAuthDataSource({required this._httpClientService, required this._localStorageService});
+
+  final HttpClientService _httpClientService;
+  final AppLocalStorageService _localStorageService;
+
   Future<Either<AppError, void>> requestCode(String phoneNumber) async {
-    await Future.delayed(const Duration(milliseconds: 700));
-    return const Right(null);
+    final Either<AppError, Map<String, dynamic>> result = await _httpClientService.request(
+      RequestOtpHttpRequest(phoneNumber: phoneNumber),
+    );
+    return result.fold(Left.new, (_) => const Right(null));
   }
 
-  Future<Either<AppError, bool>> verifyCode({
+  Future<Either<AppError, PhoneVerifyResult>> verifyCode({
     required String phoneNumber,
     required String code,
   }) async {
-    await Future.delayed(const Duration(milliseconds: 700));
-    final bool isValid = RegExp(r"^[0-9]{6}$").hasMatch(code);
-    return Right(isValid);
+    final Either<AppError, Map<String, dynamic>> result = await _httpClientService.request(
+      VerifyOtpHttpRequest(phoneNumber: phoneNumber, code: code),
+    );
+
+    return result.fold((error) async => Left(error), (data) async {
+      final String accessToken = data["accessToken"] as String;
+      final String refreshToken = data["refreshToken"] as String;
+      final bool hasProfile = data["hasProfile"] as bool? ?? false;
+
+      await _localStorageService.write(LocalStorageKeys.accessToken, accessToken);
+      await _localStorageService.write(LocalStorageKeys.refreshToken, refreshToken);
+
+      return Right((isValid: true, hasProfile: hasProfile));
+    });
   }
 }
