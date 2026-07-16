@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: helpout
+      POSTGRES_USER: helpout
+      POSTGRES_PASSWORD: helpout
+    ports:
+      - "5432:5432"
+    volumes:
+      - helpout_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  helpout_postgres_data:

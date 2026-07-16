@@ -1,0 +1,68 @@
+spring:
+  application:
+    name: helpout-backend
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/helpout}
+    username: ${DB_USERNAME:helpout}
+    password: ${DB_PASSWORD:helpout}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+server:
+  port: ${PORT:8080}
+  servlet:
+    context-path: /api/v1
+
+app:
+  security:
+    public-urls: /auth/**,/actuator/health,/swagger-ui/**,/v3/api-docs/**
+    jwt:
+      secret: ${JWT_SECRET:dev-only-secret-change-me-please-change-me-1234567890}
+      access-token-ttl-minutes: 15
+      refresh-token-ttl-days: 30
+    cors:
+      allowed-origins: "*"
+      allowed-methods: GET,POST,PUT,PATCH,DELETE,OPTIONS
+  otp:
+    length: 6
+    ttl-minutes: 10
+  tombstone-retention-days: 30
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
+  jpa:
+    hibernate:
+      ddl-auto: validate
+logging:
+  level:
+    app.helpout.backend: DEBUG
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+logging:
+  level:
+    app.helpout.backend: INFO
