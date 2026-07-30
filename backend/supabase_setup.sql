@@ -4,7 +4,7 @@ create or replace function public.generate_friend_code()
 returns text
 language sql
 as $$
-  select upper(substr(encode(gen_random_bytes(6), 'hex'), 1, 10));
+  select upper(substr(md5(random()::text || clock_timestamp()::text), 1, 10));
 $$;
 
 create table if not exists public.profiles (
@@ -128,6 +128,187 @@ as $$
   );
 $$;
 
+create or replace function public.owns_group(
+  target_group_id uuid,
+  target_user_id uuid
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.groups g
+    where g.id = target_group_id
+      and g.owner_id = target_user_id
+  );
+$$;
+
+create or replace function public.search_friend_candidates(
+  search_text text default '',
+  result_limit integer default 12
+)
+returns table (
+  id uuid,
+  user_name text,
+  nick_name text,
+  friend_code text,
+  accent_color_value bigint
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    p.id,
+    p.user_name,
+    p.nick_name,
+    p.friend_code,
+    p.accent_color_value
+  from public.profiles p
+  where p.id <> auth.uid()
+    and not exists (
+      select 1
+      from public.friendships f
+      where f.status in ('pending', 'accepted')
+        and (
+          f.requester_id = auth.uid() and f.addressee_id = p.id
+          or f.requester_id = p.id and f.addressee_id = auth.uid()
+        )
+    )
+    and (
+      coalesce(nullif(trim(search_text), ''), '') = ''
+      or p.user_name ilike '%' || replace(trim(search_text), '@', '') || '%'
+      or p.nick_name ilike '%' || replace(trim(search_text), '@', '') || '%'
+      or p.friend_code ilike '%' || replace(trim(search_text), '@', '') || '%'
+    )
+  order by p.created_at desc
+  limit greatest(1, least(coalesce(result_limit, 12), 30));
+$$;
+
+grant execute on function public.search_friend_candidates(text, integer)
+to authenticated;
+
+create or replace function public.find_profile_by_friend_code(lookup_code text)
+returns table (
+  id uuid,
+  user_name text,
+  nick_name text,
+  friend_code text,
+  accent_color_value bigint
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    p.id,
+    p.user_name,
+    p.nick_name,
+    p.friend_code,
+    p.accent_color_value
+  from public.profiles p
+  where p.id <> auth.uid()
+    and upper(p.friend_code) = upper(replace(trim(lookup_code), '@', ''))
+    and not exists (
+      select 1
+      from public.friendships f
+      where f.status in ('pending', 'accepted')
+        and (
+          f.requester_id = auth.uid() and f.addressee_id = p.id
+          or f.requester_id = p.id and f.addressee_id = auth.uid()
+        )
+    )
+  limit 1;
+$$;
+
+grant execute on function public.find_profile_by_friend_code(text)
+to authenticated;
+
+create or replace function public.create_group_with_members(
+  group_name text,
+  group_theme text,
+  invited_friend_ids uuid[]
+)
+returns table (
+  id uuid,
+  owner_id uuid,
+  name text,
+  theme text,
+  invite_code text,
+  privacy text,
+  created_at timestamptz
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_user_id uuid := auth.uid();
+  new_group_id uuid;
+  new_invite_code text;
+begin
+  if current_user_id is null then
+    raise exception 'User must be authenticated to create a group.'
+      using errcode = '28000';
+  end if;
+
+  if coalesce(array_length(invited_friend_ids, 1), 0) < 1 then
+    raise exception 'A group requires at least one invited friend.'
+      using errcode = '23514';
+  end if;
+
+  if exists (
+    select 1
+    from unnest(invited_friend_ids) invited_id
+    where not public.are_friends(current_user_id, invited_id)
+  ) then
+    raise exception 'Only accepted friends can be invited to a group.'
+      using errcode = '42501';
+  end if;
+
+  new_invite_code :=
+    'H' || upper(substr(md5(random()::text || clock_timestamp()::text), 1, 10));
+
+  insert into public.groups (owner_id, name, theme, invite_code, privacy)
+  values (
+    current_user_id,
+    trim(group_name),
+    group_theme,
+    new_invite_code,
+    'inviteOnly'
+  )
+  returning groups.id into new_group_id;
+
+  insert into public.group_members (group_id, user_id, role)
+  values (new_group_id, current_user_id, 'owner');
+
+  insert into public.group_members (group_id, user_id, role)
+  select new_group_id, invited_id, 'member'
+  from unnest(invited_friend_ids) invited_id
+  on conflict do nothing;
+
+  return query
+  select
+    g.id,
+    g.owner_id,
+    g.name,
+    g.theme,
+    g.invite_code,
+    g.privacy,
+    g.created_at
+  from public.groups g
+  where g.id = new_group_id;
+end;
+$$;
+
+grant execute on function public.create_group_with_members(text, text, uuid[])
+to authenticated;
+
 alter table public.profiles enable row level security;
 alter table public.friendships enable row level security;
 alter table public.groups enable row level security;
@@ -212,25 +393,11 @@ using (public.is_group_member(group_members.group_id, auth.uid()));
 
 create policy "owners add group members"
 on public.group_members for insert
-with check (
-  exists (
-    select 1
-    from public.groups g
-    where g.id = group_members.group_id
-      and g.owner_id = auth.uid()
-  )
-);
+with check (public.owns_group(group_members.group_id, auth.uid()));
 
 create policy "owners remove group members"
 on public.group_members for delete
-using (
-  exists (
-    select 1
-    from public.groups g
-    where g.id = group_members.group_id
-      and g.owner_id = auth.uid()
-  )
-);
+using (public.owns_group(group_members.group_id, auth.uid()));
 
 create policy "users see activity from group peers"
 on public.activity_entries for select
