@@ -123,11 +123,34 @@ create table if not exists public.schedule_entries (
   end_minutes integer check (
     end_minutes is null or end_minutes between 0 and 1440
   ),
+  active_from date not null default current_date,
+  active_until date,
+  constraint schedule_entries_active_until_check check (
+    active_until is null or active_until >= active_from
+  ),
   color_value bigint not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   primary key (user_id, id)
 );
+
+alter table public.schedule_entries
+  add column if not exists active_from date not null default current_date;
+alter table public.schedule_entries
+  add column if not exists active_until date;
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'schedule_entries_active_until_check'
+      and conrelid = 'public.schedule_entries'::regclass
+  ) then
+    alter table public.schedule_entries
+      add constraint schedule_entries_active_until_check
+      check (active_until is null or active_until >= active_from);
+  end if;
+end $$;
 
 create table if not exists public.group_image_messages (
   id uuid primary key default gen_random_uuid(),
@@ -150,7 +173,7 @@ create index if not exists user_subjects_user_category_idx
 create index if not exists daily_goals_user_idx
   on public.daily_goals(user_id);
 create index if not exists schedule_entries_user_weekday_idx
-  on public.schedule_entries(user_id, weekday, start_minutes);
+  on public.schedule_entries(user_id, weekday, active_from, start_minutes);
 create index if not exists group_image_messages_group_created_idx
   on public.group_image_messages(group_id, created_at);
 
@@ -450,6 +473,48 @@ begin
 end;
 $$;
 
+create or replace function public.join_group_by_invite_code(lookup_code text)
+returns table (
+  id uuid,
+  name text,
+  theme text,
+  owner_id uuid,
+  created_at timestamptz,
+  invite_code text,
+  privacy text
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  target_group_id uuid;
+begin
+  if auth.uid() is null then
+    raise exception 'not authenticated';
+  end if;
+
+  select g.id
+  into target_group_id
+  from public.groups g
+  where upper(g.invite_code) = upper(trim(lookup_code))
+  limit 1;
+
+  if target_group_id is null then
+    raise exception 'group not found';
+  end if;
+
+  insert into public.group_members (group_id, user_id, role)
+  values (target_group_id, auth.uid(), 'member')
+  on conflict (group_id, user_id) do nothing;
+
+  return query
+  select g.id, g.name, g.theme, g.owner_id, g.created_at, g.invite_code, g.privacy
+  from public.groups g
+  where g.id = target_group_id;
+end;
+$$;
+
 grant execute on function public.create_group_with_members(text, text, uuid[])
 to authenticated;
 
@@ -477,6 +542,7 @@ drop policy if exists "owners update groups" on public.groups;
 drop policy if exists "owners delete groups" on public.groups;
 drop policy if exists "members see group memberships" on public.group_members;
 drop policy if exists "owners add group members" on public.group_members;
+drop policy if exists "users join groups" on public.group_members;
 drop policy if exists "owners remove group members" on public.group_members;
 drop policy if exists "users leave their groups" on public.group_members;
 drop policy if exists "users see activity from group peers"
@@ -568,6 +634,10 @@ using (public.is_group_member(group_members.group_id, auth.uid()));
 create policy "owners add group members"
 on public.group_members for insert
 with check (public.owns_group(group_members.group_id, auth.uid()));
+
+create policy "users join groups"
+on public.group_members for insert
+with check (group_members.user_id = auth.uid());
 
 create policy "owners remove group members"
 on public.group_members for delete
